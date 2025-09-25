@@ -34,12 +34,30 @@ interface UserReview {
   };
 }
 
+interface UserCustomDesign {
+  id: string;
+  design_type: string;
+  material_preference: string | null;
+  budget_range: string | null;
+  description: string;
+  special_requirements: string | null;
+  contact_phone: string | null;
+  preferred_contact_time: string | null;
+  status: string;
+  admin_notes: string | null;
+  estimated_price: number | null;
+  estimated_completion_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 const Profile = () => {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const [likedProducts, setLikedProducts] = useState<LikedProduct[]>([]);
   const [userReviews, setUserReviews] = useState<UserReview[]>([]);
+  const [userCustomDesigns, setUserCustomDesigns] = useState<UserCustomDesign[]>([]);
   const [newReview, setNewReview] = useState({ rating: 5, comment: '', productId: '' });
   const [products, setProducts] = useState<any[]>([]);
   const [profile, setProfile] = useState({ display_name: '', email: '' });
@@ -50,6 +68,7 @@ const Profile = () => {
       fetchProfile();
       fetchLikedProducts();
       fetchUserReviews();
+      fetchUserCustomDesigns();
       fetchProducts();
     }
   }, [user]);
@@ -130,6 +149,20 @@ const Profile = () => {
     
     if (data) {
       setUserReviews(data);
+    }
+  };
+
+  const fetchUserCustomDesigns = async () => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from('custom_design_requests')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    
+    if (data) {
+      setUserCustomDesigns(data as UserCustomDesign[]);
     }
   };
 
@@ -326,7 +359,7 @@ const Profile = () => {
 
           {/* Profile Tabs */}
           <Tabs defaultValue="favorites" className="w-full">
-            <TabsList className={`grid w-full grid-cols-3 p-1 rounded-lg ${
+            <TabsList className={`grid w-full grid-cols-4 p-1 rounded-lg ${
               theme === 'gold' ? 'bg-yellow-50' : 'bg-gray-50'
             }`}>
               <TabsTrigger 
@@ -350,6 +383,17 @@ const Profile = () => {
               >
                 <Star className="h-4 w-4 mr-2" />
                 My Reviews
+              </TabsTrigger>
+              <TabsTrigger 
+                value="custom-designs" 
+                className={`font-medium ${
+                  theme === 'gold' 
+                    ? 'data-[state=active]:bg-yellow-500 data-[state=active]:text-white hover:bg-yellow-100' 
+                    : 'data-[state=active]:bg-gray-500 data-[state=active]:text-white hover:bg-gray-100'
+                }`}
+              >
+                <span className="text-sm mr-2">🎨</span>
+                My Designs
               </TabsTrigger>
               <TabsTrigger 
                 value="add-review" 
@@ -543,6 +587,222 @@ const Profile = () => {
                       Submit Review
                     </Button>
                   </form>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Custom Designs Tab */}
+            <TabsContent value="custom-designs" className="mt-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-3 text-xl font-bold text-gray-800">
+                    <span className="text-2xl">🎨</span>
+                    My Custom Design Requests
+                  </CardTitle>
+                  <CardDescription className="text-gray-600">
+                    Track the status of your custom jewelry design requests
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {userCustomDesigns.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-6xl mb-4">💎</div>
+                      <p className="text-gray-600 mb-4">No custom design requests yet</p>
+                      <p className="text-sm text-gray-500 mb-6">Create your own unique jewelry design and let our craftsmen bring it to life!</p>
+                      <Button 
+                        onClick={() => window.location.href = '/custom-design'}
+                        className={`${
+                          theme === 'gold' 
+                            ? 'bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600 text-white' 
+                            : 'bg-gradient-to-r from-gray-500 to-slate-500 hover:from-gray-600 hover:to-slate-600 text-white'
+                        } px-6 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-300`}
+                      >
+                        <span className="mr-2">🎨</span>
+                        Create Your Design
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {userCustomDesigns.map((design) => (
+                        <Card key={design.id} className={`transition-all duration-300 hover:shadow-lg ${
+                          theme === 'gold'
+                            ? 'bg-gradient-to-r from-amber-50/50 to-yellow-50/50 border-amber-200/60 hover:border-amber-300'
+                            : 'bg-gradient-to-r from-slate-50/50 to-gray-50/50 border-slate-200/60 hover:border-slate-300'
+                        }`}>
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <CardTitle className={`text-lg flex items-center gap-2 ${
+                                  theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                }`}>
+                                  <span className="text-2xl">
+                                    {design.design_type === 'ring' ? '💍' :
+                                     design.design_type === 'necklace' ? '📿' :
+                                     design.design_type === 'earrings' ? '👂' :
+                                     design.design_type === 'bracelet' ? '💫' :
+                                     design.design_type === 'pendant' ? '✨' : '🎨'}
+                                  </span>
+                                  {design.design_type.charAt(0).toUpperCase() + design.design_type.slice(1)} Design
+                                </CardTitle>
+                                <div className="flex items-center gap-4 mt-2 text-sm">
+                                  <span className={`${
+                                    theme === 'gold' ? 'text-amber-600' : 'text-slate-600'
+                                  }`}>
+                                    📅 Submitted: {new Date(design.created_at).toLocaleDateString()}
+                                  </span>
+                                  {design.estimated_completion_date && (
+                                    <span className={`${
+                                      theme === 'gold' ? 'text-amber-600' : 'text-slate-600'
+                                    }`}>
+                                      🎯 Expected: {new Date(design.estimated_completion_date).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-2">
+                                <Badge className={`${
+                                  design.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                                  design.status === 'in_review' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                                  design.status === 'approved' ? 'bg-green-100 text-green-800 border-green-300' :
+                                  design.status === 'in_progress' ? 'bg-purple-100 text-purple-800 border-purple-300' :
+                                  design.status === 'completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                                  'bg-red-100 text-red-800 border-red-300'
+                                } px-3 py-1 font-semibold`}>
+                                  {design.status === 'pending' ? '⏰ Pending Review' :
+                                   design.status === 'in_review' ? '👀 Under Review' :
+                                   design.status === 'approved' ? '✅ Approved' :
+                                   design.status === 'in_progress' ? '🔨 In Progress' :
+                                   design.status === 'completed' ? '🎉 Completed' :
+                                   '❌ Cancelled'}
+                                </Badge>
+                                {design.estimated_price && (
+                                  <span className={`text-sm font-semibold ${
+                                    theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                  }`}>
+                                    💰 Est: ₹{design.estimated_price.toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <div>
+                              <Label className={`text-sm font-semibold ${
+                                theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                              }`}>Your Design Description:</Label>
+                              <p className={`text-sm mt-1 p-3 rounded-lg ${
+                                theme === 'gold' ? 'bg-amber-50 text-amber-800' : 'bg-slate-50 text-slate-800'
+                              }`}>{design.description}</p>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                              {design.material_preference && (
+                                <div>
+                                  <span className={`font-semibold ${
+                                    theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                  }`}>Material: </span>
+                                  <span className={`${
+                                    theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                  }`}>{design.material_preference}</span>
+                                </div>
+                              )}
+                              {design.budget_range && (
+                                <div>
+                                  <span className={`font-semibold ${
+                                    theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                  }`}>Budget: </span>
+                                  <span className={`${
+                                    theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                  }`}>{design.budget_range}</span>
+                                </div>
+                              )}
+                              {design.contact_phone && (
+                                <div>
+                                  <span className={`font-semibold ${
+                                    theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                  }`}>Phone: </span>
+                                  <span className={`${
+                                    theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                  }`}>{design.contact_phone}</span>
+                                </div>
+                              )}
+                              {design.preferred_contact_time && (
+                                <div>
+                                  <span className={`font-semibold ${
+                                    theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                  }`}>Contact Time: </span>
+                                  <span className={`${
+                                    theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                  }`}>{design.preferred_contact_time}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {design.special_requirements && (
+                              <div>
+                                <Label className={`text-sm font-semibold ${
+                                  theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                }`}>Special Requirements:</Label>
+                                <p className={`text-sm mt-1 p-2 rounded ${
+                                  theme === 'gold' ? 'bg-amber-50/50 text-amber-800' : 'bg-slate-50/50 text-slate-800'
+                                }`}>{design.special_requirements}</p>
+                              </div>
+                            )}
+
+                            {design.admin_notes && (
+                              <div className={`p-3 rounded-lg ${
+                                theme === 'gold' ? 'bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-200' : 'bg-gradient-to-r from-slate-100 to-gray-100 border border-slate-200'
+                              }`}>
+                                <Label className={`text-sm font-semibold flex items-center gap-2 ${
+                                  theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                }`}>
+                                  💬 Message from our team:
+                                </Label>
+                                <p className={`text-sm mt-2 ${
+                                  theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                }`}>{design.admin_notes}</p>
+                              </div>
+                            )}
+
+                            {design.status === 'pending' && (
+                              <div className={`text-center p-4 rounded-lg ${
+                                theme === 'gold' ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50 border border-gray-200'
+                              }`}>
+                                <p className={`text-sm ${
+                                  theme === 'gold' ? 'text-yellow-800' : 'text-gray-800'
+                                }`}>
+                                  ⏳ Your design request is being reviewed. We'll contact you within 24 hours!
+                                </p>
+                              </div>
+                            )}
+
+                            {design.status === 'completed' && (
+                              <div className="text-center p-4 rounded-lg bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200">
+                                <p className="text-sm text-emerald-800">
+                                  🎉 Congratulations! Your custom design has been completed. Please contact us to arrange pickup or delivery.
+                                </p>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                      
+                      <div className="text-center pt-4">
+                        <Button 
+                          onClick={() => window.location.href = '/custom-design'}
+                          variant="outline"
+                          className={`${
+                            theme === 'gold' 
+                              ? 'border-amber-400 text-amber-700 hover:bg-amber-50' 
+                              : 'border-slate-400 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="mr-2">➕</span>
+                          Create Another Design
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

@@ -96,7 +96,7 @@ const Navigation = () => {
 
             {/* Full-Width Navigation - spans across left side */}
             <div className="hidden lg:flex items-center flex-1">
-              <div className={`flex items-center justify-between w-full max-w-2xl px-18 py-30 rounded-full backdrop-blur-sm ${
+              <div className={`flex items-center justify-between w-full max-w-3xl px-6 py-3 rounded-full backdrop-blur-sm ${
                 theme === 'gold'
                   ? 'bg-gradient-to-r from-amber-100/50 to-yellow-100/50 border border-amber-200/40'
                   : 'bg-gradient-to-r from-slate-100/50 to-gray-100/50 border border-slate-200/40'
@@ -111,7 +111,7 @@ const Navigation = () => {
                   <Link
                     key={item.to}
                     to={item.to}
-                    className={`group relative px-4 py-2 text-sm font-medium rounded-full transition-all duration-300 hover:scale-105 ${
+                    className={`group relative px-1 py-0 text-sm font-medium rounded-full transition-all duration-300 hover:scale-105 ${
                       theme === 'gold'
                         ? 'text-amber-800 hover:text-amber-900 hover:bg-amber-200/60'
                         : 'text-slate-800 hover:text-slate-900 hover:bg-slate-200/60'
@@ -131,6 +131,27 @@ const Navigation = () => {
                     </span>
                   </Link>
                 ))}
+                
+                {/* Design Button - Only for non-admin users */}
+                {user && !isAdmin && (
+                  <Link
+                    to="/custom-design"
+                    className={`group relative px-3 py-2 text-sm font-medium rounded-full transition-all duration-300 hover:scale-105 ${
+                      theme === 'gold'
+                        ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-white hover:from-amber-600 hover:to-yellow-600 shadow-sm'
+                        : 'bg-gradient-to-r from-slate-500 to-gray-500 text-white hover:from-slate-600 hover:to-gray-600 shadow-sm'
+                    } hover:shadow-md`}
+                  >
+                    <span className="flex items-center space-x-2">
+                      <span className="text-base group-hover:rotate-12 transition-transform duration-300">🎨</span>
+                      <span className="relative">
+                        Design
+                        {/* Sparkle effect */}
+                        <span className="absolute -top-1 -right-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300">✨</span>
+                      </span>
+                    </span>
+                  </Link>
+                )}
               </div>
             </div>
           </div>

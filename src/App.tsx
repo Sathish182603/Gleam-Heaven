@@ -17,6 +17,7 @@ import AdminSetup from "./pages/AdminSetup";
 import AdminManagement from "./pages/AdminManagement";
 import Cart from "./pages/Cart";
 import OurStory from "./pages/OurStory";
+import CustomDesign from "./pages/CustomDesign";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +51,7 @@ const App = () => {
                     <Route path="admin-management" element={<AdminManagement />} />
                     <Route path="cart" element={<Cart />} />
                     <Route path="our-story" element={<OurStory />} />
+                    <Route path="custom-design" element={<CustomDesign />} />
                     <Route path="*" element={<NotFound />} />
                   </Route>
                 </Routes>

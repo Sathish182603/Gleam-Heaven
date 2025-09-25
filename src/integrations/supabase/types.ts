@@ -204,6 +204,68 @@ export type Database = {
         }
         Relationships: []
       }
+      custom_design_requests: {
+        Row: {
+          id: string
+          user_id: string
+          design_type: string
+          material_preference: string | null
+          budget_range: string | null
+          description: string
+          special_requirements: string | null
+          contact_phone: string | null
+          preferred_contact_time: string | null
+          status: string
+          admin_notes: string | null
+          estimated_price: number | null
+          estimated_completion_date: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          design_type: string
+          material_preference?: string | null
+          budget_range?: string | null
+          description: string
+          special_requirements?: string | null
+          contact_phone?: string | null
+          preferred_contact_time?: string | null
+          status?: string
+          admin_notes?: string | null
+          estimated_price?: number | null
+          estimated_completion_date?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          design_type?: string
+          material_preference?: string | null
+          budget_range?: string | null
+          description?: string
+          special_requirements?: string | null
+          contact_phone?: string | null
+          preferred_contact_time?: string | null
+          status?: string
+          admin_notes?: string | null
+          estimated_price?: number | null
+          estimated_completion_date?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_design_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "auth.users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never

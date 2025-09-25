@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import Navigation from '@/components/Navigation';
 import Footer from '@/components/Footer';
@@ -34,6 +35,29 @@ interface Product {
   updated_at: string;
 }
 
+interface CustomDesignRequest {
+  id: string;
+  user_id: string;
+  design_type: string;
+  material_preference: string | null;
+  budget_range: string | null;
+  description: string;
+  special_requirements: string | null;
+  contact_phone: string | null;
+  preferred_contact_time: string | null;
+  status: string;
+  admin_notes: string | null;
+  estimated_price: number | null;
+  estimated_completion_date: string | null;
+  created_at: string;
+  updated_at: string;
+  profiles?: {
+    display_name: string | null;
+    email: string | null;
+    avatar_url: string | null;
+  } | null;
+}
+
 const Admin = () => {
   const { user } = useAuth();
   const { theme } = useTheme();
@@ -49,6 +73,13 @@ const Admin = () => {
   const [uploading, setUploading] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'rings' | 'necklaces' | 'earrings'>('all');
+  
+  // Custom Design Requests state
+  const [customRequests, setCustomRequests] = useState<CustomDesignRequest[]>([]);
+  const [requestStatusFilter, setRequestStatusFilter] = useState<'all' | 'pending' | 'in_review' | 'approved' | 'in_progress' | 'completed' | 'cancelled'>('all');
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [dbHealthStatus, setDbHealthStatus] = useState<'unknown' | 'healthy' | 'needs_migration' | 'permission_error'>('unknown');
+  const [requestsError, setRequestsError] = useState<string | null>(null);
   const [productForm, setProductForm] = useState({
     name: '',
     description: '',
@@ -64,6 +95,11 @@ const Admin = () => {
       checkAdminStatus();
       fetchMetalRates();
       fetchProducts();
+      checkDatabaseHealth().then((status) => {
+        if (status === 'healthy') {
+          fetchCustomRequests();
+        }
+      });
     }
   }, [user]);
 
@@ -78,11 +114,21 @@ const Admin = () => {
         .eq('role', 'admin')
         .single();
       
+      if (error) {
+        console.error('Error checking admin status:', error);
+        // If there's an error (like table doesn't exist), we can still continue
+        // but assume user is not admin
+        setIsAdmin(false);
+        setLoading(false);
+        return;
+      }
+      
       const isUserAdmin = !!data;
       setIsAdmin(isUserAdmin);
       setLoading(false);
     } catch (error) {
       console.error('Error checking admin status:', error);
+      setIsAdmin(false);
       setLoading(false);
     }
   };
@@ -120,6 +166,192 @@ const Admin = () => {
       }));
       
       setProducts(typedProducts);
+    }
+  };
+
+  const fetchCustomRequests = async () => {
+    setLoadingRequests(true);
+    setRequestsError(null);
+    try {
+      // First, let's try a simple query without joins to see if the table exists
+      const { data: testData, error: testError } = await supabase
+        .from('custom_design_requests')
+        .select('id, user_id, design_type, status, created_at')
+        .limit(1);
+
+      if (testError) {
+        console.error('Error testing custom_design_requests table:', testError);
+        
+        // If the table doesn't exist, show a helpful message
+        if (testError.code === 'PGRST116' || testError.message.includes('does not exist')) {
+          setRequestsError("The custom_design_requests table doesn't exist. Please run the database setup.");
+          setDbHealthStatus('needs_migration');
+          toast({
+            title: "Database Setup Required",
+            description: "The custom design requests table hasn't been created yet. Click 'Quick Setup' below for instructions.",
+            variant: "destructive"
+          });
+          setCustomRequests([]);
+          return;
+        }
+
+        // Handle permission errors
+        if (testError.code === 'PGRST301' || testError.message.includes('permission')) {
+          setRequestsError("Permission denied. You need admin role to view custom design requests.");
+          setDbHealthStatus('permission_error');
+          toast({
+            title: "Permission Error",
+            description: "You don't have permission to view custom design requests. Please check your admin role.",
+            variant: "destructive"
+          });
+          setCustomRequests([]);
+          return;
+        }
+
+        throw testError;
+      }
+
+      // If basic query works, try the full query with joins
+      const { data, error } = await supabase
+        .from('custom_design_requests')
+        .select(`
+          *,
+          profiles (
+            display_name,
+            email,
+            avatar_url
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching custom requests with profiles:', error);
+        
+        // Try without profiles join as fallback
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('custom_design_requests')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (fallbackError) {
+          throw fallbackError;
+        }
+        
+        if (fallbackData) {
+          console.warn('Using fallback query without profiles join');
+          setCustomRequests(fallbackData as unknown as CustomDesignRequest[]);
+          toast({
+            title: "Partial Data Loaded",
+            description: "Custom requests loaded but user profile information is not available.",
+            variant: "default"
+          });
+        }
+        return;
+      }
+      
+      if (data) {
+        setCustomRequests(data as unknown as CustomDesignRequest[]);
+        setDbHealthStatus('healthy');
+        setRequestsError(null);
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching custom requests:', err);
+      setRequestsError(`Failed to load custom design requests: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast({
+        title: "Error",
+        description: `Failed to load custom design requests: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        variant: "destructive"
+      });
+      setCustomRequests([]);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  const checkDatabaseHealth = async () => {
+    try {
+      // Test basic table access
+      const { error } = await supabase
+        .from('custom_design_requests')
+        .select('id')
+        .limit(1);
+
+      if (error) {
+        if (error.code === 'PGRST116' || error.message.includes('does not exist')) {
+          setDbHealthStatus('needs_migration');
+          return 'needs_migration';
+        }
+        if (error.code === 'PGRST301' || error.message.includes('permission')) {
+          setDbHealthStatus('permission_error');
+          return 'permission_error';
+        }
+        console.error('Database health check failed:', error);
+        setDbHealthStatus('needs_migration');
+        return 'needs_migration';
+      }
+
+      setDbHealthStatus('healthy');
+      return 'healthy';
+    } catch (err) {
+      console.error('Database health check error:', err);
+      setDbHealthStatus('needs_migration');
+      return 'needs_migration';
+    }
+  };
+
+  const createCustomRequestsTable = async () => {
+    try {
+      // Import the setup utilities
+      const { getSetupInstructions, testCustomDesignTable } = await import('@/utils/databaseSetup');
+      
+      // Test if table exists
+      const tableTest = await testCustomDesignTable();
+      
+      if (tableTest.exists) {
+        toast({
+          title: "✅ Table Already Exists!",
+          description: "The custom_design_requests table is already set up. Try refreshing the page.",
+        });
+        
+        // Refresh data
+        setTimeout(() => {
+          fetchCustomRequests();
+        }, 1000);
+        
+        return;
+      }
+
+      // Show setup instructions
+      const instructions = getSetupInstructions();
+      console.log(instructions);
+      
+      toast({
+        title: "🛠️ Manual Setup Required",
+        description: "Check the browser console for detailed SQL setup instructions. Copy and paste the SQL commands in your Supabase dashboard.",
+        duration: 15000,
+      });
+
+      // Also show a more detailed alert
+      alert(`DATABASE SETUP REQUIRED
+
+The custom_design_requests table needs to be created manually.
+
+STEPS:
+1. Open browser console (F12) 
+2. Copy the SQL commands shown there
+3. Go to your Supabase dashboard → SQL Editor
+4. Paste and run the SQL commands
+5. Refresh this page
+
+Check the console now for the complete SQL script!`);
+
+    } catch (err) {
+      console.error('Setup error:', err);
+      toast({
+        title: "Setup Error", 
+        description: "Please check the console for manual setup instructions.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -396,6 +628,50 @@ const Admin = () => {
     ? products 
     : products.filter(product => product.category === categoryFilter);
 
+  // Filter custom requests based on status
+  const filteredCustomRequests = requestStatusFilter === 'all' 
+    ? customRequests 
+    : customRequests.filter(request => request.status === requestStatusFilter);
+
+  // Function to update custom request status
+  const updateRequestStatus = async (requestId: string, status: string, adminNotes?: string, estimatedPrice?: number, estimatedDate?: string) => {
+    try {
+      const updates: any = { status };
+      if (adminNotes !== undefined) updates.admin_notes = adminNotes;
+      if (estimatedPrice !== undefined) updates.estimated_price = estimatedPrice;
+      if (estimatedDate !== undefined) updates.estimated_completion_date = estimatedDate;
+
+      const { error } = await supabase
+        .from('custom_design_requests')
+        .update(updates)
+        .eq('id', requestId);
+
+      if (error) {
+        console.error('Error updating request status:', error);
+        toast({
+          title: "Error",
+          description: "Failed to update request status",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      toast({
+        title: "Success",
+        description: "Request status updated successfully"
+      });
+
+      fetchCustomRequests();
+    } catch (err) {
+      console.error('Unexpected error updating request:', err);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gold-bg flex items-center justify-center">
@@ -484,7 +760,7 @@ const Admin = () => {
 
           <Tabs defaultValue="products" className="w-full relative">
             {/* Enhanced Tab List */}
-            <TabsList className={`grid w-full grid-cols-2 bg-white/90 backdrop-blur-sm shadow-lg rounded-xl p-1 mb-8 h-14 ${
+            <TabsList className={`grid w-full grid-cols-3 bg-white/90 backdrop-blur-sm shadow-lg rounded-xl p-1 mb-8 h-14 ${
               theme === 'gold'
                 ? 'border-2 border-amber-200/50'
                 : 'border-2 border-slate-200/50'
@@ -498,7 +774,7 @@ const Admin = () => {
                 }`}
               >
                 <Package className="h-4 w-4" />
-                <span className="text-sm">Product Management</span>
+                <span className="text-sm">Products</span>
               </TabsTrigger>
               <TabsTrigger 
                 value="rates" 
@@ -510,6 +786,17 @@ const Admin = () => {
               >
                 <TrendingUp className="h-4 w-4" />
                 <span className="text-sm">Metal Rates</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="custom-requests" 
+                className={`flex items-center gap-2 transition-all duration-300 rounded-lg font-medium py-2 px-4 h-12 ${
+                  theme === 'gold'
+                    ? 'data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-yellow-500 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-amber-100/50'
+                    : 'data-[state=active]:bg-gradient-to-r data-[state=active]:from-slate-500 data-[state=active]:to-gray-500 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100/50'
+                }`}
+              >
+                <span className="text-base">🎨</span>
+                <span className="text-sm">Custom Requests</span>
               </TabsTrigger>
             </TabsList>
 
@@ -1108,6 +1395,374 @@ const Admin = () => {
                   >
                     Update Rates
                   </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Custom Design Requests Tab */}
+            <TabsContent value="custom-requests" className="space-y-6">
+              <Card className={`bg-white/80 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-500 relative overflow-hidden ${
+                theme === 'gold'
+                  ? 'border-2 border-amber-200/50'
+                  : 'border-2 border-slate-200/50'
+              }`}>
+                <CardHeader className="relative">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-3 rounded-xl text-white shadow-lg hover:scale-110 transition-transform duration-300 ${
+                        theme === 'gold'
+                          ? 'bg-gradient-to-r from-amber-500 to-yellow-500'
+                          : 'bg-gradient-to-r from-slate-500 to-gray-500'
+                      }`}>
+                        🎨
+                      </div>
+                      <div>
+                        <CardTitle className={`text-xl ${
+                          theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                        }`}>Customer Design Requests ({filteredCustomRequests.length})</CardTitle>
+                        <CardDescription className={`${
+                          theme === 'gold' ? 'text-amber-700/80' : 'text-slate-700/80'
+                        }`}>
+                          Manage custom jewelry design requests from customers
+                        </CardDescription>
+                        {/* Database Status Indicator */}
+                        {dbHealthStatus !== 'unknown' && (
+                          <div className="mt-2 flex items-center gap-2">
+                            {dbHealthStatus === 'healthy' ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                ✅ Database Ready
+                              </span>
+                            ) : dbHealthStatus === 'needs_migration' ? (
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                  ⚠️ Setup Required
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={createCustomRequestsTable}
+                                  className="text-xs"
+                                >
+                                  Quick Setup
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                ❌ Permission Error
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="status-filter" className={`text-sm whitespace-nowrap ${
+                        theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                      }`}>
+                        Filter by Status:
+                      </Label>
+                      <select
+                        id="status-filter"
+                        value={requestStatusFilter}
+                        onChange={(e) => setRequestStatusFilter(e.target.value as any)}
+                        className={`min-w-[140px] px-3 py-2 border rounded-md bg-white focus:outline-none focus:ring-2 text-sm ${
+                          theme === 'gold'
+                            ? 'border-amber-300 text-amber-800 focus:ring-amber-500 focus:border-amber-500'
+                            : 'border-slate-300 text-slate-800 focus:ring-slate-500 focus:border-slate-500'
+                        }`}
+                      >
+                        <option value="all">📋 All Status</option>
+                        <option value="pending">⏰ Pending</option>
+                        <option value="in_review">👀 In Review</option>
+                        <option value="approved">✅ Approved</option>
+                        <option value="in_progress">🔨 In Progress</option>
+                        <option value="completed">🎉 Completed</option>
+                        <option value="cancelled">❌ Cancelled</option>
+                      </select>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {loadingRequests ? (
+                    <div className={`text-center py-8 ${
+                      theme === 'gold' ? 'text-amber-700/70' : 'text-slate-700/70'
+                    }`}>
+                      <div className="text-4xl mb-4 animate-spin">⏳</div>
+                      <p className="text-lg">Loading custom design requests...</p>
+                    </div>
+                  ) : requestsError ? (
+                    <div className={`text-center py-8 ${
+                      theme === 'gold' ? 'text-red-700' : 'text-red-600'
+                    }`}>
+                      <div className="text-6xl mb-4">⚠️</div>
+                      <p className="text-lg mb-4 font-medium">Database Setup Required</p>
+                      <div className={`max-w-md mx-auto p-4 rounded-lg border-2 ${
+                        theme === 'gold' 
+                          ? 'bg-red-50 border-red-200 text-red-800' 
+                          : 'bg-red-50 border-red-200 text-red-800'
+                      }`}>
+                        <p className="text-sm mb-3">{requestsError}</p>
+                        <div className="space-y-2">
+                          <Button
+                            onClick={createCustomRequestsTable}
+                            size="sm"
+                            className={`w-full ${
+                              theme === 'gold'
+                                ? 'bg-amber-600 hover:bg-amber-700'
+                                : 'bg-slate-600 hover:bg-slate-700'
+                            } text-white`}
+                          >
+                            📋 Show Setup Instructions
+                          </Button>
+                          <p className="text-xs text-gray-600">
+                            This will show you the SQL commands to run in your Supabase dashboard
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : customRequests.length === 0 ? (
+                    <div className={`text-center py-8 ${
+                      theme === 'gold' ? 'text-amber-700/70' : 'text-slate-700/70'
+                    }`}>
+                      <div className="text-6xl mb-4">🎨</div>
+                      <p className="text-lg mb-2">No custom design requests yet</p>
+                      <p className="text-sm">Customer design requests will appear here when submitted</p>
+                    </div>
+                  ) : filteredCustomRequests.length === 0 ? (
+                    <div className={`text-center py-8 ${
+                      theme === 'gold' ? 'text-amber-700/70' : 'text-slate-700/70'
+                    }`}>
+                      <div className="text-6xl mb-4">🔍</div>
+                      <p className="text-lg mb-2">No {requestStatusFilter} requests found</p>
+                      <p className="text-sm">Try selecting a different status filter</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {filteredCustomRequests.map((request) => (
+                        <Card key={request.id} className={`transition-all duration-300 hover:shadow-lg ${
+                          theme === 'gold'
+                            ? 'bg-gradient-to-r from-amber-50/50 to-yellow-50/50 border-amber-200/60 hover:border-amber-300'
+                            : 'bg-gradient-to-r from-slate-50/50 to-gray-50/50 border-slate-200/60 hover:border-slate-300'
+                        }`}>
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <CardTitle className={`text-lg flex items-center gap-2 ${
+                                  theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                }`}>
+                                  <span className="text-2xl">
+                                    {request.design_type === 'ring' ? '💍' :
+                                     request.design_type === 'necklace' ? '📿' :
+                                     request.design_type === 'earrings' ? '👂' :
+                                     request.design_type === 'bracelet' ? '💫' :
+                                     request.design_type === 'pendant' ? '✨' : '🎨'}
+                                  </span>
+                                  {request.design_type.charAt(0).toUpperCase() + request.design_type.slice(1)} Design Request
+                                </CardTitle>
+                                <div className="flex items-center gap-4 mt-2 text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-8 w-8">
+                                      <AvatarImage 
+                                        src={request.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(request.profiles?.display_name || request.profiles?.email || 'User')}&backgroundColor=f59e0b`}
+                                        alt={request.profiles?.display_name || 'User Avatar'} 
+                                      />
+                                      <AvatarFallback className={`text-xs ${
+                                        theme === 'gold' 
+                                          ? 'bg-amber-100 text-amber-800' 
+                                          : 'bg-slate-100 text-slate-800'
+                                      }`}>
+                                        {(request.profiles?.display_name || request.profiles?.email || 'U').charAt(0).toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span className={`${
+                                      theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                    }`}>
+                                      {request.profiles?.display_name || request.profiles?.email || 'Unknown User'}
+                                    </span>
+                                  </div>
+                                  <span className={`${
+                                    theme === 'gold' ? 'text-amber-600' : 'text-slate-600'
+                                  }`}>
+                                    📅 {new Date(request.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-2">
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                  request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                  request.status === 'in_review' ? 'bg-blue-100 text-blue-800' :
+                                  request.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                  request.status === 'in_progress' ? 'bg-purple-100 text-purple-800' :
+                                  request.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                                  'bg-red-100 text-red-800'
+                                }`}>
+                                  {request.status.replace('_', ' ').toUpperCase()}
+                                </span>
+                                {request.estimated_price && (
+                                  <span className={`text-sm font-semibold ${
+                                    theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                  }`}>
+                                    Est: ₹{request.estimated_price.toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <Label className={`text-sm font-semibold ${
+                                  theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                }`}>Description:</Label>
+                                <p className={`text-sm mt-1 ${
+                                  theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                }`}>{request.description}</p>
+                              </div>
+                              <div className="space-y-2">
+                                {request.material_preference && (
+                                  <div>
+                                    <span className={`text-sm font-semibold ${
+                                      theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                    }`}>Material: </span>
+                                    <span className={`text-sm ${
+                                      theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                    }`}>{request.material_preference}</span>
+                                  </div>
+                                )}
+                                {request.budget_range && (
+                                  <div>
+                                    <span className={`text-sm font-semibold ${
+                                      theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                    }`}>Budget: </span>
+                                    <span className={`text-sm ${
+                                      theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                    }`}>{request.budget_range}</span>
+                                  </div>
+                                )}
+                                {request.contact_phone && (
+                                  <div>
+                                    <span className={`text-sm font-semibold ${
+                                      theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                    }`}>Phone: </span>
+                                    <span className={`text-sm ${
+                                      theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                    }`}>{request.contact_phone}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Enhanced Special Requirements Section */}
+                            {request.special_requirements && (
+                              <div className={`p-4 rounded-lg border-l-4 ${
+                                theme === 'gold' 
+                                  ? 'bg-amber-50 border-l-amber-400' 
+                                  : 'bg-blue-50 border-l-blue-400'
+                              }`}>
+                                <Label className={`text-base font-semibold flex items-center gap-2 ${
+                                  theme === 'gold' ? 'text-amber-800' : 'text-blue-800'
+                                }`}>
+                                  📋 Special Requirements
+                                </Label>
+                                <p className={`text-sm mt-2 font-medium leading-relaxed ${
+                                  theme === 'gold' ? 'text-amber-900' : 'text-blue-900'
+                                }`}>{request.special_requirements}</p>
+                              </div>
+                            )}
+
+                            {/* Enhanced Description Section for Reference Photos */}
+                            {request.description && (
+                              <div className={`p-4 rounded-lg border-l-4 ${
+                                theme === 'gold' 
+                                  ? 'bg-emerald-50 border-l-emerald-400' 
+                                  : 'bg-green-50 border-l-green-400'
+                              }`}>
+                                <Label className={`text-base font-semibold flex items-center gap-2 ${
+                                  theme === 'gold' ? 'text-emerald-800' : 'text-green-800'
+                                }`}>
+                                  💎 Design Description & Reference Materials
+                                </Label>
+                                <div className={`text-sm mt-2 font-medium leading-relaxed whitespace-pre-line ${
+                                  theme === 'gold' ? 'text-emerald-900' : 'text-green-900'
+                                }`}>
+                                  {request.description.split('\n\n').map((paragraph, index) => (
+                                    <div key={index} className={index > 0 ? 'mt-3' : ''}>
+                                      {paragraph.includes('📸 Reference Photos') ? (
+                                        <div className={`p-2 rounded ${
+                                          theme === 'gold' ? 'bg-amber-100' : 'bg-yellow-100'
+                                        }`}>
+                                          <span className="font-bold text-orange-700">
+                                            {paragraph}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        paragraph
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {request.admin_notes && (
+                              <div className={`p-3 rounded-lg ${
+                                theme === 'gold' ? 'bg-amber-100/50' : 'bg-slate-100/50'
+                              }`}>
+                                <Label className={`text-sm font-semibold ${
+                                  theme === 'gold' ? 'text-amber-700' : 'text-slate-700'
+                                }`}>Admin Notes:</Label>
+                                <p className={`text-sm mt-1 ${
+                                  theme === 'gold' ? 'text-amber-800' : 'text-slate-800'
+                                }`}>{request.admin_notes}</p>
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-2 pt-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateRequestStatus(request.id, 'in_review')}
+                                className={`${
+                                  theme === 'gold'
+                                    ? 'border-blue-400 text-blue-700 hover:bg-blue-50'
+                                    : 'border-blue-400 text-blue-700 hover:bg-blue-50'
+                                }`}
+                                disabled={request.status === 'in_review'}
+                              >
+                                👀 Review
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateRequestStatus(request.id, 'approved')}
+                                className={`${
+                                  theme === 'gold'
+                                    ? 'border-green-400 text-green-700 hover:bg-green-50'
+                                    : 'border-green-400 text-green-700 hover:bg-green-50'
+                                }`}
+                                disabled={request.status === 'approved' || request.status === 'completed'}
+                              >
+                                ✅ Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateRequestStatus(request.id, 'completed')}
+                                className={`${
+                                  theme === 'gold'
+                                    ? 'border-emerald-400 text-emerald-700 hover:bg-emerald-50'
+                                    : 'border-emerald-400 text-emerald-700 hover:bg-emerald-50'
+                                }`}
+                                disabled={request.status === 'completed'}
+                              >
+                                🎉 Complete
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
